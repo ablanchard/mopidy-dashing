@@ -5,7 +5,10 @@ import urllib2
 import logging
 import json
 
+import requests
+
 from mopidy import core
+from mopidy.models import ModelJSONEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -29,39 +32,49 @@ class DashingFrontend(pykka.ThreadingActor, core.CoreListener):
 		logger.debug(self.url)
 
 	def on_stop(self):
+		self.send_stopped()
+
+	def send_stopped(self):
 		message = json.dumps({
 			"auth_token": self.auth_token,
-			"title": "Stopped"
+			"title": "Radio down :(",
+			"text":""
 		})
-
 		logger.info(message)
-
-#		urllib2.urlopen(self.req, message)
+		self.send_to_dashing(message)
 
 	def track_playback_started(self, tl_track):
-		artists = []
-
-		for artist in tl_track.track.artists:
-			artists.append(artist.name)			
-		
-		message = json.dumps({ 
-			"auth_token": self.auth_token, 
-			"title": tl_track.track.name,
-			"text": "%s - %s" % ("/".join(artists), tl_track.track.album.name),
-		})
-
-		logger.info(message)
-
-		urllib2.urlopen(self.req, message)
-
-	def track_playback_ended(self, tl_track, time_position):
+		current_track = tl_track.track
+		current_track = "None" if tl_track is None else self.title_dash_artist(current_track)
 
 		message = json.dumps({
 			"auth_token": self.auth_token,
-			"title": "Stopped"
-		})
+			"title": "Currently playing",
+			"text": current_track
+		}, cls=ModelJSONEncoder)
 
 		logger.info(message)
+		self.send_to_dashing(message)
 
-		urllib2.urlopen(self.req, message)
-		
+	def send_to_dashing(self, message):
+		try:
+			response = requests.post(
+				self.url,
+				data=message,
+			)
+		except Exception as e:
+			logger.warning('Unable to send webhook: ({1}) {2}'.format(
+				e.__class__.__name__,
+				e.message,
+			))
+		else:
+			logger.debug('Webhook response: ({0}) {1}'.format(
+				response.status_code,
+				response.text,
+			))
+
+	def title_dash_artist(self,track):
+		if len(track.artists) < 1:
+			return track.name
+		return track.name + " - " + iter(track.artists).next().name
+

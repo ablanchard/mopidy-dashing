@@ -29,7 +29,7 @@ class DashingFrontend(pykka.ThreadingActor, core.CoreListener):
 		self.req.add_header('Content-Type', 'application/json')
 
 	def on_start(self):
-		logger.debug(self.url)
+		self.send_stopped()
 
 	def on_stop(self):
 		self.send_stopped()
